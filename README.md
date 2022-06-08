@@ -28,7 +28,7 @@ python train_net.py --config-file <config-file> --num-gpus <num-gpus>
 
 ## Main Results
 
-|                                          | Backbone   | Epoch | AP   | FPS  | Weights |
+|  Model                                   | Backbone   | Epoch | AP   | FPS  | Weights |
 | ---------------------------------------- | ---------- | ----- | ---- | ---- | ------- |
 | FEATURIZED QR-CNN(100 Queries)           | ResNet-50  | 36    | 41.3 | 26   |         |
 | FEATURIZED QR-CNN(2 Stages, 100 Queries) | ResNet-50  | 36    | 43.0 | 24   |         |
