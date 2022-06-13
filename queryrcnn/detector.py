@@ -1,9 +1,3 @@
-#
-# Modified by Peize Sun, Rufeng Zhang
-# Contact: {sunpeize, cxrfzhang}@foxmail.com
-#
-# Copyright (c) Facebook, Inc. and its affiliates. All Rights Reserved
-
 import torch
 from torch import nn
 import torch.nn.functional as F
@@ -143,10 +137,10 @@ class QueryRCNN(nn.Module):
         gt_instances = [x["instances"].to(self.device) for x in batched_inputs]
         targets = self.prepare_targets(gt_instances)
         
-        proposals, losses = self.rpn_head(images, src, targets, position_encodings)
-        proposal_boxes = torch.stack([x[0].proposal_boxes.tensor for x in proposals])
+        proposals, losses = self.rpn_head(images, src, targets)
+        proposal_boxes = torch.stack([x.proposal_boxes.tensor for x in proposals])
         init_boxes = proposal_boxes.detach()
-        proposal_features = torch.stack([x[0].proposal_feats for x in proposals])
+        proposal_features = torch.stack([x.proposal_feats for x in proposals])
         # Prediction.
         outputs_class, outputs_coord = self.head(features, init_boxes, proposal_features, pos_rcnn)
         
