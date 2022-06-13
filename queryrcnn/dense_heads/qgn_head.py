@@ -3,7 +3,6 @@ from scipy.optimize import linear_sum_assignment
 
 import torch
 import torch.nn.functional as F
-
 from torch import nn
 from typing import List
 from fvcore.nn import sigmoid_focal_loss_jit
@@ -31,20 +30,8 @@ class StaRPNHead(nn.Module):
     objectness logits for each anchor and a second 1x1 conv predicts bounding-box deltas
     specifying how to deform each anchor into an object proposal.
     """
-    def __init__(self, cfg, input_shape, box_dim: int = 4):
-        """
-        NOTE: this interface is experimental.
 
-        Args:
-            in_channels (int): number of input feature channels. When using multiple
-                input features, they must have the same number of channels.
-            num_anchors (int): number of anchors to predict for *each spatial position*
-                on the feature map. The total number of anchors for each
-                feature map will be `num_anchors * H * W`.
-            box_dim (int): dimension of a box, which is also the number of box regression
-                predictions to make for each anchor. An axis aligned box has
-                box_dim=4, while a rotated box has box_dim=5.
-        """
+    def __init__(self, cfg, input_shape, box_dim: int = 4):
         super().__init__()
         # 3x3 conv for the hidden representation
         in_channels = input_shape['p3'].channels
@@ -52,14 +39,15 @@ class StaRPNHead(nn.Module):
         self.conv = nn.Conv2d(in_channels, in_channels, kernel_size=3, stride=1, padding=1)
         # 1x1 conv for predicting objectness logits
         self.objectness_logits = nn.Conv2d(in_channels, self.num_classes, kernel_size=1, stride=1)
-        self.anchor_deltas = nn.Conv2d(in_channels, box_dim, kernel_size=1, stride=1)
         self.proposal_feats = nn.Conv2d(in_channels, in_channels, kernel_size=1, stride=1)
+        self.anchor_deltas = nn.Conv2d(in_channels, box_dim, kernel_size=1, stride=1)
 
-        for l in [self.conv, self.objectness_logits, self.anchor_deltas, self.proposal_feats]:
+        for l in [self.conv, self.objectness_logits, self.anchor_deltas]:
             nn.init.normal_(l.weight, std=0.01)
             nn.init.constant_(l.bias, 0)
 
         self.fpn_strides = cfg.MODEL.QueryRCNN.RPN.FPN_STRIDES
+        self.norm_reg_targets = True
         self.scales = nn.ModuleList(
             [Scale(init_value=1.0) for _ in range(len(self.fpn_strides))])
 
@@ -84,11 +72,14 @@ class StaRPNHead(nn.Module):
         feats = []
         # filter_subnet = []
         for level, x in enumerate(features):
-            t = self.conv(x)
-            bbox_pred = self.scales[level](self.anchor_deltas(F.relu(t)))
-            pred_anchor_deltas.append(F.relu(bbox_pred) * self.fpn_strides[level])
-            
-            pred_objectness_logits.append(self.objectness_logits(F.relu(t)))
+            t = F.relu(self.conv(x))
+            bbox_pred = self.scales[level](self.anchor_deltas(t))
+            if self.norm_reg_targets:
+                pred_anchor_deltas.append(F.relu(bbox_pred) * self.fpn_strides[level])
+            else:
+                pred_anchor_deltas.append(torch.exp(bbox_pred))
+            # filter_subnet.append(t)
+            pred_objectness_logits.append(self.objectness_logits(t))
             feats.append(self.proposal_feats(t))
 
         return pred_objectness_logits, feats, pred_anchor_deltas
@@ -138,7 +129,6 @@ class QGN(nn.Module):
                 h, w, self.fpn_strides[level],
                 feature.device
             )
-            # h,w (50,76)
             locations.append(locations_per_level)
         return locations
 
@@ -166,6 +156,8 @@ class QGN(nn.Module):
                 box transformations for the single shift shifts[i].
             shifts (Tensor): shifts to transform, of shape (N, 2)
         """
+        # import pdb; pdb.set_trace()
+        # assert torch.isfinite(deltas).all().item()
         shifts = shifts.to(deltas.dtype)
         if deltas.numel() == 0:
             return torch.empty_like(deltas)
@@ -194,7 +186,7 @@ class QGN(nn.Module):
         return deltas
 
     @torch.no_grad()
-    def get_ground_truth(self, shifts, targets, box_cls, box_delta, filters=None):
+    def get_ground_truth(self, images, shifts, targets, box_cls, box_delta, filters=None):
         """
         Args:
             shifts (list[list[Tensor]]): a liget_ground_truth of N=#image elements. Each is a
@@ -224,7 +216,9 @@ class QGN(nn.Module):
 
         box_cls = torch.cat(box_cls, dim=1)
         box_delta = torch.cat(box_delta, dim=1)
+        # filters = torch.cat(filters, dim=1)
         box_cls = box_cls.sigmoid_()
+        # filters = filters.sigmoid_()
         num_fg = 0
         num_gt = 0
         img_idx = 0
@@ -243,6 +237,7 @@ class QGN(nn.Module):
             )
             iou = pairwise_iou(gt_boxes, Boxes(boxes))
             quality = prob ** self.objectness_alpha * iou ** (1 - self.objectness_alpha)
+
             deltas = self.get_deltas(
                 shifts_over_all_feature_maps, gt_boxes.tensor.unsqueeze(1))
 
@@ -252,6 +247,7 @@ class QGN(nn.Module):
                 is_in_boxes = deltas.sum(dim=-1) > 0
 
             quality[~is_in_boxes] = -1
+            # self.check_in_bbox(images, is_in_boxes, shifts_over_all_feature_maps)
             ins_nums = targets_per_image['labels'].shape[0]
             gt_idxs, shift_idxs = linear_sum_assignment(quality.cpu().numpy(), maximize=True)
             num_fg += len(shift_idxs)
@@ -265,6 +261,7 @@ class QGN(nn.Module):
                 len(shifts_over_all_feature_maps), 4
             )
             if ins_nums > 0:
+                # ground truth classes
                 if self.num_classes == 1:
                     gt_classes_i[shift_idxs] = 1
                 else:
@@ -302,6 +299,7 @@ class QGN(nn.Module):
         locations = self.compute_locations(features)
 
         pred_objectness_logits, pred_features, pred_anchor_deltas = self.rpn_head(features)
+        pos_embed = []
 
         pred_objectness_logits = [
             # (N, A, Hi, Wi) -> (N, Hi, Wi, A) -> (N, Hi*Wi*A)
@@ -324,60 +322,107 @@ class QGN(nn.Module):
             .flatten(1, -2)
             for x in pred_anchor_deltas
         ]
-
-        pred_proposals = cat(self._decode_proposals(locations, pred_anchor_deltas), dim=1)
-        pred_feats = cat(pred_features, dim=1)
-        pred_obj_logits = cat(pred_objectness_logits, dim=1)
-        
-        keep = pred_obj_logits[..., 0].argsort(descending=True, dim=1)
-        keep = keep[:, :self.max_detections_per_image]
-
-        pred_boxes = torch.gather(pred_proposals, 1, keep.unsqueeze(-1).repeat(1, 1, self.box_dim))
-        featurized_queries = torch.gather(pred_feats, 1, keep.unsqueeze(-1).repeat(1, 1, self.feat_dim))
-        # featurized_queries = self.encoder(featurized_queries)
-        
         if self.training:
+            # instances = [batched_input["instances"].to(self.device) for batched_input in batched_inputs]
             gt_classes, gt_shifts = self.get_ground_truth(
-                locations, targets, pred_objectness_logits, pred_anchor_deltas)
+                images.tensor, locations, targets, pred_objectness_logits, pred_anchor_deltas)
+
             losses = self.losses(gt_classes, gt_shifts, pred_objectness_logits, pred_anchor_deltas)
+            proposals = self.predict_proposals(
+                locations, pred_objectness_logits, pred_features, pred_anchor_deltas, image_sizes)
         else:
             losses = {}
+            proposals = self.simple_predict_proposals(
+                locations, pred_objectness_logits, pred_features, pred_anchor_deltas, image_sizes)
         
-        proposals = self.predict_proposals(featurized_queries, pred_boxes, image_sizes)
         return proposals, losses
+
+    def simple_predict_proposals(
+        self,
+        locations,
+        pred_objectness_logits: List[torch.Tensor],
+        pred_features: List[torch.Tensor],
+        pred_anchor_deltas: List[torch.Tensor],
+        image_sizes
+    ):
+        N = pred_objectness_logits[0].shape[0]
+        proposals = []
+        with torch.no_grad():
+            for img_idx in range(N):
+                pred_anchor_deltas_single = cat([
+                    pred_anchor_delta[img_idx] for pred_anchor_delta in pred_anchor_deltas
+                ])
+                pred_anchor_logits_single = cat([
+                    pred_anchor_logit[img_idx] for pred_anchor_logit in pred_objectness_logits
+                ])
+                pred_feature_single = cat([
+                    pred_feature[img_idx] for pred_feature in pred_features
+                ])
+                locations = cat(locations)
+                predicted_boxes = self.apply_deltas(
+                    pred_anchor_deltas_single,
+                    locations)
+                scores_all = pred_anchor_logits_single.flatten()
+                keep = scores_all.argsort(descending=True)
+                keep = keep[:self.max_detections_per_image]
+
+                result = Instances(image_sizes[img_idx])
+                boxes_all = Boxes(predicted_boxes)
+                result.proposal_boxes = boxes_all[keep]
+                result.proposal_feats = pred_feature_single[keep]
+                proposals.append(result)
+        return proposals
 
     def predict_proposals(
         self,
-        featurized_queries,
-        pred_boxes,
+        locations,
+        pred_objectness_logits: List[torch.Tensor],
+        pred_features: List[torch.Tensor],
+        pred_anchor_deltas: List[torch.Tensor],
         image_sizes
     ):
-        N = pred_boxes.shape[0]
+        N = pred_objectness_logits[0].shape[0]
+        keep_idxs = []
         proposals = []
+        with torch.no_grad():
+            for img_idx in range(N):
+                pred_anchor_deltas_single = [
+                    pred_anchor_delta[img_idx] for pred_anchor_delta in pred_anchor_deltas
+                ]
+                pred_anchor_logits_single = [
+                    pred_anchor_logit[img_idx] for pred_anchor_logit in pred_objectness_logits
+                ]
+                predicted_boxes = self.apply_deltas(
+                    cat(pred_anchor_deltas_single),
+                    cat(locations))
+                boxes_all = Boxes(predicted_boxes)
+                scores_all = cat(pred_anchor_logits_single).flatten().sigmoid()
+                boxes_all.clip(image_sizes[img_idx])
+                keep1 = boxes_all.nonempty()
+                scores_all[~keep1] = -1
+
+                keep = scores_all.argsort(descending=True)
+                keep = keep[:self.max_detections_per_image]
+                keep_idxs.append(keep)
+                result = Instances(image_sizes[img_idx])
+                result.proposal_boxes = boxes_all[keep]
+                result.objectness_logits = scores_all[keep]
+                proposals.append(result)
         for img_idx in range(N):
-            boxes_all = Boxes(pred_boxes[img_idx])
-            boxes_all.clip(image_sizes[img_idx])
-            
-            result = Instances(image_sizes[img_idx])
-            result.proposal_boxes = boxes_all
-            result.proposal_feats = featurized_queries[img_idx]
-            proposals.append(result)
-        return proposals
-            
-    def _decode_proposals(self, shifts, deltas):
-        proposals = []
-        for shift_i, pred_deltas_i in zip(shifts, deltas):
-            proposal_i = self.apply_deltas(pred_deltas_i, shift_i)
-            proposal_i = proposal_i.reshape(-1, 4)
-            proposals.append(proposal_i)
+            pred_feature_single = cat([
+                pred_feature[img_idx] for pred_feature in pred_features
+            ])
+            pred_feature_single = pred_feature_single[keep_idxs[img_idx], :]
+            proposals[img_idx].proposal_feats = pred_feature_single
+
         return proposals
 
     def losses(
-        self,
-        gt_labels,
-        gt_boxes,
-        pred_objectness_logits: List[torch.Tensor],
-        pred_shift_deltas: List[torch.Tensor]):
+            self,
+            gt_labels,
+            gt_boxes,
+            pred_objectness_logits: List[torch.Tensor],
+            pred_shift_deltas: List[torch.Tensor]):
 
         pred_class_logits = torch.cat(pred_objectness_logits, dim=1).view(-1, self.num_classes)
         pred_shift_deltas = torch.cat(pred_shift_deltas, dim=1).view(-1, 4)
@@ -386,6 +431,7 @@ class QGN(nn.Module):
         gt_boxes = gt_boxes.view(-1, 4)
 
         valid_idxs = gt_labels >= 0
+        # background_idxs = gt_labels == 0
         if self.num_classes == 1:
             foreground_idxs = gt_labels == 1
         else:
