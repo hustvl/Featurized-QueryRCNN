@@ -44,10 +44,10 @@ python train_net.py --config-file <config-file> --num-gpus <num-gpus>
 |  Model                                   | Backbone   | Epoch | AP   | FPS  | Weights |
 | ---------------------------------------- | ---------- | ----- | ---- | ---- | ------- |
 | FEATURIZED QR-CNN(100 Queries)           | ResNet-50  | 36    | 41.3 | 26   |         |
-| FEATURIZED QR-CNN(2 Stages, 100 Queries) | ResNet-50  | 36    | 43.0 | 24   |         |
-| FEATURIZED QR-CNN(2 Stages, 300 Queries) | ResNet-50  | 36    | 44.6 | 24   |         |
-| FEATURIZED QR-CNN(2 Stages, 100 Queries) | ResNet-101 | 36    | 43.9 | 18   |         |
-| FEATURIZED QR-CNN(2 Stages, 300 Queries) | ResNet-101 | 36    | 45.8 | 17   |         |
+| Cascade FEATURIZED QR-CNN(100 Queries) | ResNet-50  | 36    | 43.0 | 24   |         |
+| Cascade FEATURIZED QR-CNN(300 Queries) | ResNet-50  | 36    | 44.6 | 24   |         |
+| Cascade FEATURIZED QR-CNN(100 Queries) | ResNet-101 | 36    | 43.9 | 18   |         |
+| Cascade FEATURIZED QR-CNN(300 Queries) | ResNet-101 | 36    | 45.8 | 17   |         |
 
 - The speed is tested on a single RTX 2080Ti GPU on COCO val set.
 
