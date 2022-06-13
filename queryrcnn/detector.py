@@ -1,3 +1,9 @@
+#
+# Modified by Peize Sun, Rufeng Zhang
+# Contact: {sunpeize, cxrfzhang}@foxmail.com
+#
+# Copyright (c) Facebook, Inc. and its affiliates. All Rights Reserved
+
 import torch
 from torch import nn
 import torch.nn.functional as F
@@ -87,7 +93,7 @@ class QueryRCNN(nn.Module):
             feature = src[f]
             features.append(feature)
         
-        proposals, _ = self.rpn_head(images, src, None, position_encodings)
+        proposals, _ = self.rpn_head(images, src, None)
         proposal_boxes = torch.stack([x.proposal_boxes.tensor for x in proposals])
         init_boxes = proposal_boxes.detach()
         proposal_features = torch.stack([x.proposal_feats for x in proposals])
