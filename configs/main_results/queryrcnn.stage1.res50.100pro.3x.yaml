@@ -1,0 +1,68 @@
+MODEL:
+  META_ARCHITECTURE: "QueryRCNN"
+  WEIGHTS: "ImageNetPretrained/torchvision/R-50.pkl"
+  MASK_ON: False
+  PIXEL_MEAN: [123.675, 116.280, 103.530]
+  PIXEL_STD: [58.395, 57.120, 57.375]
+  BACKBONE:
+    NAME: "build_retinanet_resnet_fpn_backbone"
+  RESNETS:
+    OUT_FEATURES: ["res2", "res3", "res4", "res5"]
+    DEPTH: 50
+    STRIDE_IN_1X1: False
+  FPN:
+    IN_FEATURES: ["res2", "res3", "res4", "res5"]
+  RPN:
+    IN_FEATURES: ["p3", "p4", "p5", "p6", "p7"]
+  ROI_HEADS:
+    IN_FEATURES: ["p2", "p3", "p4", "p5"]
+  ROI_BOX_HEAD:
+    POOLER_TYPE: "ROIAlignV2"
+    POOLER_RESOLUTION: 7
+    POOLER_SAMPLING_RATIO: 2
+  QueryRCNN:
+    RCNNHead: rcnnhead_wmha
+    WITH_POS: False
+    RPN:
+      RPN_TYPE: "anchor_free"
+      FPN_STRIDES: [8, 16, 32, 64, 128]
+      NUM_CLASSES: 1
+  SparseRCNN:
+    NUM_HEADS: 1
+    BBOX_WEIGHTS: [2., 2., 1., 1.]
+    NUM_PROPOSALS: 100
+    NUM_CLASSES: 80
+    GIOU_WEIGHT: 2.
+    CLASS_WEIGHT: 2.
+SOLVER:
+  IMS_PER_BATCH: 16
+  BASE_LR: 0.000025
+  STEPS: (210000, 250000)
+  MAX_ITER: 270000
+  WARMUP_FACTOR: 0.01
+  WARMUP_ITERS: 1000
+  WEIGHT_DECAY: 0.0001
+  OPTIMIZER: "ADAMW"
+  BACKBONE_MULTIPLIER: 1.0  # keep same with BASE_LR.
+  CLIP_GRADIENTS:
+    ENABLED: True
+    CLIP_TYPE: "full_model"
+    CLIP_VALUE: 1.0
+    NORM_TYPE: 2.0
+SEED: 40244023
+DATASETS:
+  TRAIN: ("coco_2017_train",)
+  TEST: ("coco_2017_val",)
+INPUT:
+  MIN_SIZE_TRAIN: (480, 512, 544, 576, 608, 640, 672, 704, 736, 768, 800)
+  CROP:
+    ENABLED: False
+    TYPE: "absolute_range"
+    SIZE: (384, 600)
+  FORMAT: "RGB"
+TEST:
+  EVAL_PERIOD: 7330
+DATALOADER:
+  FILTER_EMPTY_ANNOTATIONS: False
+  NUM_WORKERS: 4
+VERSION: 2
