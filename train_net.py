@@ -1,14 +1,3 @@
-#
-# Modified by Peize Sun, Rufeng Zhang
-# Contact: {sunpeize, cxrfzhang}@foxmail.com
-#
-# Copyright (c) Facebook, Inc. and its affiliates. All Rights Reserved
-"""
-SparseRCNN Training Script.
-
-This script is a simplified version of the training script in detectron2/tools.
-"""
-
 import os
 import itertools
 from typing import Any, Dict, List, Set
