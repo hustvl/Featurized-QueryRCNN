@@ -8,7 +8,8 @@ Wenqiang Zhang*, Tianheng Cheng*, <a href="https://xinggangw.info/">Xinggang Wan
 <!-- <div><a href="">[Project Page]</a>(comming soon)</div>  -->
 <div><a href="https://arxiv.org/abs/2206.06258">[arXiv]</a></div>
 
-![Speed and Accuracy Trade-off](figs/tradeoff.png)
+
+<img src="figs/tradeoff.png" height="100">
 
 </div>
 
