@@ -6,7 +6,7 @@ Wenqiang Zhang*, Tianheng Cheng*, <a href="https://xinggangw.info/">Xinggang Wan
 (<span>*</span>: equal contribution, <span>&#8224;</span>: corresponding author)
 
 <!-- <div><a href="">[Project Page]</a>(comming soon)</div>  -->
-<div><a href="https://arxiv.org/abs/2203.12827">[arXiv]</a></div>
+<div><a href="https://arxiv.org/abs/2206.06258">[arXiv]</a></div>
 
 </div>
 
@@ -68,7 +68,7 @@ If you find Featurized Query R-CNN is useful in your research or applications, p
 @article{FeaturizedQR-CNN,
   title={Featurized Query R-CNN},
   author={Zhang, Wenqiang and Cheng, Tianheng and Wang, Xinggang and Chen, Shaoyu and Zhang, Qian and Liu, Wenyu},
-  journal={arXiv preprint arXiv:},
+  journal={arXiv preprint arXiv:2206.04584},
   year={2022}
 }
 ```
